@@ -1,16 +1,16 @@
-# KMP AI Kit
+# KMP AI
 
 A Kotlin Multiplatform SDK that provides a unified, type-safe, and extensible API for integrating AI models into Kotlin applications.
 
 ## Overview
 
-KMP AI Kit is an open-source project that aims to simplify AI integration across Kotlin Multiplatform applications. The SDK provides a consistent developer experience for interacting with multiple AI providers through a single, unified API.
+KMP AI is an open-source project that aims to simplify AI integration across Kotlin Multiplatform applications. The SDK provides a consistent developer experience for interacting with multiple AI providers through a single, unified API.
 
 The project is designed to reduce repetitive implementation work, improve code maintainability, and make it easier to build AI-powered applications for Android, iOS, Desktop, JVM, and other Kotlin-supported platforms.
 
 ## Vision
 
-The long-term vision of KMP AI Kit is to become a comprehensive AI toolkit for the Kotlin ecosystem by offering:
+The long-term vision of KMP AI is to become a comprehensive AI toolkit for the Kotlin ecosystem by offering:
 
 - A unified API for multiple AI providers
 - Kotlin Multiplatform support
