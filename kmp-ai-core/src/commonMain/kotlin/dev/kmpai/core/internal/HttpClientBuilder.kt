@@ -29,8 +29,8 @@ val sharedJson = Json {
  *
  * @param config Client configuration.
  * @param engine Optional custom engine (useful for testing with [MockEngine]).
- * @param providerHeaders Provider-specific headers to include on every request
- *   (e.g. Authorization, x-api-key). Merged with any headers in [config].
+ * @param providerHeaders Provider-specific headers added to every request
+ *   (e.g. Authorization, x-api-key). Merged with headers in [config].
  */
 internal fun buildHttpClient(
     config: AiClientConfig,
@@ -54,14 +54,20 @@ internal fun buildHttpClient(
             maxRetries = config.maxRetries
             retryOnServerErrors(maxRetries = config.maxRetries)
             retryOnException(maxRetries = config.maxRetries, retryOnTimeout = true)
-            exponentialDelay(base = config.retryDelayMs.toDouble() / 1000)
+            // base = exponential multiplier (2.0 → 1 s, 2 s, 4 s, …)
+            // maxDelayMs caps the ceiling; initialDelay is the first wait in ms
+            exponentialDelay(
+                base        = 2.0,
+                maxDelayMs  = 60_000L,
+                initialDelay = config.retryDelayMs,
+            )
         }
 
         install(DefaultRequest) {
             header(HttpHeaders.ContentType, ContentType.Application.Json)
             // Provider-specific auth headers (Authorization, x-api-key, etc.)
             providerHeaders.forEach { (key, value) -> header(key, value) }
-            // Any custom headers the caller injected via config
+            // Any custom headers injected via config
             config.defaultHeaders.forEach { (key, value) -> header(key, value) }
         }
 
