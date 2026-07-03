@@ -6,7 +6,16 @@ plugins {
 
 mavenPublishing {
     publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
-    signAllPublications()
+
+    // Sign only when GPG credentials are present (CI / Maven Central release).
+    // Without this guard, publishToMavenLocal fails locally because Gradle
+    // cannot wire the signing tasks when no key is configured.
+    val hasSigningKey = providers.environmentVariable("ORG_GRADLE_PROJECT_signingInMemoryKey").isPresent
+        || project.hasProperty("signing.keyId")
+        || project.hasProperty("signingInMemoryKey")
+    if (hasSigningKey) {
+        signAllPublications()
+    }
 
     coordinates(
         groupId    = "dev.kmpai",
