@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "XH-F1EcBWGuKTMh9DuaXp"
+uri = "file://kmp-ai-sdk-plan.md"
+type = "text"
+title = "KMP AI SDK — Complete Implementation Plan"
