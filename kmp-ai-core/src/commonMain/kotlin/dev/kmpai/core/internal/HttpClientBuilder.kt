@@ -2,7 +2,6 @@ package dev.kmpai.core.internal
 
 import dev.kmpai.core.AiClientConfig
 import io.ktor.client.HttpClient
-import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.DefaultRequest
 import io.ktor.client.plugins.HttpRequestRetry
@@ -30,19 +29,17 @@ val sharedJson = Json {
  *
  * @param config Client configuration.
  * @param engine Optional custom engine (useful for testing with [MockEngine]).
- * @param additionalConfig Extra Ktor configuration applied after the shared defaults.
+ * @param providerHeaders Provider-specific headers to include on every request
+ *   (e.g. Authorization, x-api-key). Merged with any headers in [config].
  */
 internal fun buildHttpClient(
     config: AiClientConfig,
     engine: HttpClientEngine? = null,
-    additionalConfig: HttpClientConfig<*>.() -> Unit = {},
+    providerHeaders: Map<String, String> = emptyMap(),
 ): HttpClient {
-    val factory: HttpClient = if (engine != null) {
-        HttpClient(engine)
-    } else {
-        HttpClient()
-    }
-    return factory.config {
+    val client: HttpClient = if (engine != null) HttpClient(engine) else HttpClient()
+
+    return client.config {
         install(ContentNegotiation) {
             json(sharedJson)
         }
@@ -50,7 +47,7 @@ internal fun buildHttpClient(
         install(HttpTimeout) {
             requestTimeoutMillis = config.timeoutMs
             connectTimeoutMillis = 10_000L
-            socketTimeoutMillis = config.timeoutMs
+            socketTimeoutMillis  = config.timeoutMs
         }
 
         install(HttpRequestRetry) {
@@ -62,6 +59,9 @@ internal fun buildHttpClient(
 
         install(DefaultRequest) {
             header(HttpHeaders.ContentType, ContentType.Application.Json)
+            // Provider-specific auth headers (Authorization, x-api-key, etc.)
+            providerHeaders.forEach { (key, value) -> header(key, value) }
+            // Any custom headers the caller injected via config
             config.defaultHeaders.forEach { (key, value) -> header(key, value) }
         }
 
@@ -75,7 +75,5 @@ internal fun buildHttpClient(
                 level = LogLevel.ALL
             }
         }
-
-        additionalConfig()
     }
 }

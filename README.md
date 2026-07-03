@@ -2,7 +2,7 @@
 
 [![Build](https://github.com/ahmed-madhoun1/KMP-AI/actions/workflows/build.yml/badge.svg)](https://github.com/ahmed-madhoun1/KMP-AI/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-blueviolet.svg?logo=kotlin)](https://kotlinlang.org/)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.3.20-blueviolet.svg?logo=kotlin)](https://kotlinlang.org/)
 
 A Kotlin Multiplatform SDK that provides a unified, type-safe, and extensible API for integrating AI models into Kotlin applications.
 
@@ -53,7 +53,7 @@ val client = KmpAi.openAi {
 // Single response
 val response = client.chat(
     ChatRequest(
-        model = OpenAiModels.GPT_4O,
+        model = OpenAiModels.GPT_4_1,
         messages = listOf(
             Message(Role.user, MessageContent.Text("What is Kotlin Multiplatform?"))
         )
@@ -72,7 +72,7 @@ client.close()
 ### Conversation DSL
 
 ```kotlin
-val session = client.session(model = OpenAiModels.GPT_4O_MINI)
+val session = client.session(model = OpenAiModels.GPT_4_1_MINI)
 
 val r1 = session.send("Hello! Who are you?")
 val r2 = session.send("What did I just ask you?") // Remembers history
@@ -97,7 +97,7 @@ val executor = ToolExecutor {
 }
 
 val response = client.chatWithTools(
-    request = ChatRequest(model = OpenAiModels.GPT_4O, messages = messages, tools = listOf(weatherTool)),
+    request  = ChatRequest(model = OpenAiModels.GPT_4_1, messages = messages, tools = listOf(weatherTool)),
     executor = executor,
 )
 ```
@@ -106,7 +106,7 @@ val response = client.chatWithTools(
 
 ```kotlin
 val request = ChatRequest(
-    model = OpenAiModels.GPT_4O,
+    model = OpenAiModels.GPT_4_1,
     messages = listOf(
         message(Role.user) {
             text("Describe what you see in this image:")
@@ -122,9 +122,9 @@ val response = client.chat(request)
 | Module | Description |
 |---|---|
 | `kmp-ai-core` | Core interfaces, models, error hierarchy |
-| `kmp-ai-openai` | OpenAI provider (GPT-4o, o1, embeddings) |
-| `kmp-ai-anthropic` | Anthropic provider (Claude 3.5) |
-| `kmp-ai-gemini` | Google Gemini provider |
+| `kmp-ai-openai` | OpenAI provider (GPT-4.1, o3, o4-mini, embeddings) |
+| `kmp-ai-anthropic` | Anthropic provider (Claude 4, Claude 3.7) |
+| `kmp-ai-gemini` | Google Gemini provider (Gemini 2.5) |
 | `kmp-ai-ollama` | Ollama local model provider |
 | `kmp-ai-streaming` | Flow utilities for streaming responses |
 | `kmp-ai-tools` | Type-safe tool/function calling DSL |
@@ -145,6 +145,14 @@ kmp-ai-tools         ← Tool calling DSL
 kmp-ai-multimodal    ← Multimodal content helpers
 ```
 
+## Requirements
+
+- Kotlin **2.3.20**
+- Gradle **9.3.1**
+- Android: minSdk **24**, compileSdk **36**
+- iOS: Xcode 16+ (macOS required for iOS targets)
+- JVM: Java **17+**
+
 ## Status
 
 🚧 **Active development — pre-release**
@@ -152,7 +160,7 @@ kmp-ai-multimodal    ← Multimodal content helpers
 ## License
 
 ```
-Copyright 2024 KMP AI Contributors
+Copyright 2026 Ahmed Madhoun
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

@@ -26,7 +26,6 @@ import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.ServerResponseException
 import io.ktor.client.request.get
-import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
@@ -56,13 +55,11 @@ class OpenAiClient internal constructor(
         baseUrl = config.baseUrl ?: "https://api.openai.com/v1",
     )
 
-    private val httpClient = buildHttpClient(config, httpClientEngine) {
-        io.ktor.client.plugins.DefaultRequest.apply {  }
-    }.config {
-        io.ktor.client.plugins.defaultRequest {
-            header("Authorization", "Bearer ${config.apiKey}")
-        }
-    }
+    private val httpClient = buildHttpClient(
+        config = config,
+        engine = httpClientEngine,
+        providerHeaders = mapOf("Authorization" to "Bearer ${config.apiKey}"),
+    )
 
     override suspend fun chat(request: ChatRequest): ChatResponse {
         return try {
@@ -72,7 +69,9 @@ class OpenAiClient internal constructor(
         } catch (e: ClientRequestException) {
             throw e.toAiException(provider.name)
         } catch (e: ServerResponseException) {
-            throw AiException.ProviderException(e.message ?: "Server error", provider.name, e.response.status.value)
+            throw AiException.ProviderException(
+                e.message ?: "Server error", provider.name, e.response.status.value,
+            )
         } catch (e: Exception) {
             throw AiException.NetworkException(e.message ?: "Network error", e)
         }
@@ -133,20 +132,18 @@ class OpenAiClient internal constructor(
 }
 
 private suspend fun ClientRequestException.toAiException(providerName: String): AiException {
-    val body = try { response.bodyAsText() } catch (_: Exception) { message ?: "" }
+    val body     = try { response.bodyAsText() } catch (_: Exception) { message ?: "" }
     val errorMsg = try {
         sharedJson.decodeFromString<OpenAiErrorResponse>(body).error.message
     } catch (_: Exception) { body }
 
     return when (response.status) {
-        HttpStatusCode.Unauthorized -> AiException.AuthenticationException(errorMsg, providerName)
+        HttpStatusCode.Unauthorized   -> AiException.AuthenticationException(errorMsg, providerName)
         HttpStatusCode.TooManyRequests -> {
             val retryAfter = response.headers["Retry-After"]?.toIntOrNull()
             AiException.RateLimitException(errorMsg, providerName, retryAfter)
         }
-        else -> AiException.InvalidRequestException(
-            errorMsg, providerName, response.status.value
-        )
+        else -> AiException.InvalidRequestException(errorMsg, providerName, response.status.value)
     }
 }
 

@@ -22,7 +22,6 @@ import dev.kmpai.core.models.StreamChunk
 import dev.kmpai.core.models.Usage
 import dev.kmpai.core.models.asText
 import dev.kmpai.anthropic.internal.dto.AnthropicContent
-import dev.kmpai.anthropic.internal.dto.AnthropicDelta
 import dev.kmpai.anthropic.internal.dto.AnthropicErrorResponse
 import dev.kmpai.anthropic.internal.dto.AnthropicMessage
 import dev.kmpai.anthropic.internal.dto.AnthropicMessageRequest
@@ -33,8 +32,6 @@ import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.ServerResponseException
-import io.ktor.client.request.get
-import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
@@ -61,7 +58,6 @@ class AnthropicClient internal constructor(
 
     companion object {
         private const val ANTHROPIC_VERSION = "2023-06-01"
-        private const val ANTHROPIC_BETA = "tools-2024-04-04"
     }
 
     override val provider = AiProvider(
@@ -70,12 +66,14 @@ class AnthropicClient internal constructor(
         baseUrl = config.baseUrl ?: "https://api.anthropic.com/v1",
     )
 
-    private val httpClient = buildHttpClient(config, httpClientEngine).config {
-        io.ktor.client.plugins.defaultRequest {
-            header("x-api-key", config.apiKey)
-            header("anthropic-version", ANTHROPIC_VERSION)
-        }
-    }
+    private val httpClient = buildHttpClient(
+        config = config,
+        engine = httpClientEngine,
+        providerHeaders = mapOf(
+            "x-api-key"          to config.apiKey,
+            "anthropic-version"  to ANTHROPIC_VERSION,
+        ),
+    )
 
     override suspend fun chat(request: ChatRequest): ChatResponse {
         val dto = request.toAnthropicRequest()
@@ -86,7 +84,9 @@ class AnthropicClient internal constructor(
         } catch (e: ClientRequestException) {
             throw e.toAiException(provider.name)
         } catch (e: ServerResponseException) {
-            throw AiException.ProviderException(e.message ?: "Server error", provider.name, e.response.status.value)
+            throw AiException.ProviderException(
+                e.message ?: "Server error", provider.name, e.response.status.value,
+            )
         } catch (e: Exception) {
             throw AiException.NetworkException(e.message ?: "Network error", e)
         }
@@ -108,13 +108,13 @@ class AnthropicClient internal constructor(
                             try {
                                 val event = sharedJson.decodeFromString<AnthropicStreamEvent>(data)
                                 when (event.type) {
-                                    "message_start" -> streamId = event.message?.id ?: ""
+                                    "message_start"      -> streamId = event.message?.id ?: ""
                                     "content_block_delta" -> {
                                         val text = event.delta?.text
                                         if (!text.isNullOrEmpty()) {
                                             emit(StreamChunk(
-                                                id = streamId,
-                                                delta = MessageDelta(content = text),
+                                                id          = streamId,
+                                                delta       = MessageDelta(content = text),
                                                 finishReason = null,
                                             ))
                                         }
@@ -126,15 +126,15 @@ class AnthropicClient internal constructor(
                                         }
                                         if (stopReason != null) {
                                             emit(StreamChunk(
-                                                id = streamId,
-                                                delta = MessageDelta(),
+                                                id           = streamId,
+                                                delta        = MessageDelta(),
                                                 finishReason = stopReason.toFinishReason(),
-                                                usage = usage,
+                                                usage        = usage,
                                             ))
                                         }
                                     }
                                 }
-                            } catch (_: Exception) { /* skip */ }
+                            } catch (_: Exception) { /* skip malformed events */ }
                         }
                     }
                 }
@@ -155,8 +155,8 @@ class AnthropicClient internal constructor(
 
     override suspend fun listModels(): List<AiModel> = AnthropicModels.run {
         listOf(
-            CLAUDE_3_5_SONNET, CLAUDE_3_5_HAIKU,
-            CLAUDE_3_OPUS, CLAUDE_3_SONNET, CLAUDE_3_HAIKU,
+            CLAUDE_OPUS_4, CLAUDE_SONNET_4, CLAUDE_HAIKU_4,
+            CLAUDE_3_7_SONNET, CLAUDE_3_5_SONNET, CLAUDE_3_5_HAIKU,
         ).map { id ->
             AiModel(
                 id = id,
@@ -172,23 +172,23 @@ class AnthropicClient internal constructor(
 
     private fun ChatRequest.toAnthropicRequest(): AnthropicMessageRequest {
         val systemMessage = messages.firstOrNull { it.role == Role.system }?.content?.asText()
-        val conversation = messages.filter { it.role != Role.system }
+        val conversation  = messages.filter { it.role != Role.system }
         return AnthropicMessageRequest(
-            model = model,
-            system = systemMessage,
-            messages = conversation.map { msg ->
+            model     = model,
+            system    = systemMessage,
+            messages  = conversation.map { msg ->
                 AnthropicMessage(
-                    role = msg.role.name,
+                    role    = msg.role.name,
                     content = JsonPrimitive(msg.content.asText() ?: ""),
                 )
             },
-            maxTokens = maxTokens ?: 1024,
+            maxTokens   = maxTokens ?: 1024,
             temperature = temperature,
-            topP = topP,
-            stop = stop,
-            tools = tools?.map { t ->
+            topP        = topP,
+            stop        = stop,
+            tools       = tools?.map { t ->
                 AnthropicTool(
-                    name = t.function.name,
+                    name        = t.function.name,
                     description = t.function.description,
                     inputSchema = t.function.parameters,
                 )
@@ -201,13 +201,13 @@ private fun AnthropicMessageResponse.toCoreResponse(provider: AiProvider): ChatR
     val text = content.filterIsInstance<AnthropicContent>()
         .firstOrNull { it.type == "text" }?.text ?: ""
     return ChatResponse(
-        id = id,
-        model = model,
+        id       = id,
+        model    = model,
         provider = provider,
-        choices = listOf(
+        choices  = listOf(
             Choice(
-                index = 0,
-                message = Message(Role.assistant, MessageContent.Text(text)),
+                index        = 0,
+                message      = Message(Role.assistant, MessageContent.Text(text)),
                 finishReason = stopReason?.toFinishReason(),
             )
         ),
@@ -218,19 +218,19 @@ private fun AnthropicMessageResponse.toCoreResponse(provider: AiProvider): ChatR
 }
 
 private fun String.toFinishReason(): FinishReason = when (this) {
-    "end_turn" -> FinishReason.stop
+    "end_turn"   -> FinishReason.stop
     "max_tokens" -> FinishReason.length
-    "tool_use" -> FinishReason.tool_calls
-    else -> FinishReason.stop
+    "tool_use"   -> FinishReason.tool_calls
+    else         -> FinishReason.stop
 }
 
 private suspend fun ClientRequestException.toAiException(providerName: String): AiException {
-    val body = try { response.bodyAsText() } catch (_: Exception) { message ?: "" }
+    val body     = try { response.bodyAsText() } catch (_: Exception) { message ?: "" }
     val errorMsg = try {
         sharedJson.decodeFromString<AnthropicErrorResponse>(body).error.message
     } catch (_: Exception) { body }
     return when (response.status) {
-        HttpStatusCode.Unauthorized -> AiException.AuthenticationException(errorMsg, providerName)
+        HttpStatusCode.Unauthorized    -> AiException.AuthenticationException(errorMsg, providerName)
         HttpStatusCode.TooManyRequests -> AiException.RateLimitException(errorMsg, providerName)
         else -> AiException.InvalidRequestException(errorMsg, providerName, response.status.value)
     }
@@ -238,17 +238,17 @@ private suspend fun ClientRequestException.toAiException(providerName: String): 
 
 /** DSL config builder for Anthropic. */
 class AnthropicClientConfigBuilder {
-    var apiKey: String = ""
-    var baseUrl: String? = null
-    var timeoutMs: Long = 60_000L
-    var maxRetries: Int = 3
-    var httpLoggingEnabled: Boolean = false
+    var apiKey             : String  = ""
+    var baseUrl            : String? = null
+    var timeoutMs          : Long    = 60_000L
+    var maxRetries         : Int     = 3
+    var httpLoggingEnabled : Boolean = false
 
     fun build() = AiClientConfig(
-        apiKey = apiKey,
-        baseUrl = baseUrl,
-        timeoutMs = timeoutMs,
-        maxRetries = maxRetries,
+        apiKey             = apiKey,
+        baseUrl            = baseUrl,
+        timeoutMs          = timeoutMs,
+        maxRetries         = maxRetries,
         httpLoggingEnabled = httpLoggingEnabled,
     )
 }

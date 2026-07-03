@@ -62,15 +62,17 @@ class GeminiClient internal constructor(
 ) : AiClient {
 
     override val provider = AiProvider(
-        id = "gemini",
-        name = "Google Gemini",
+        id      = "gemini",
+        name    = "Google Gemini",
         baseUrl = config.baseUrl ?: "https://generativelanguage.googleapis.com/v1beta",
     )
 
     private val httpClient = buildHttpClient(config, httpClientEngine)
 
+    // Gemini uses an API key query param, not a header — no providerHeaders needed.
+
     override suspend fun chat(request: ChatRequest): ChatResponse {
-        val dto = request.toGeminiRequest()
+        val dto       = request.toGeminiRequest()
         val modelPath = "models/${request.model}:generateContent"
         return try {
             httpClient.post("${provider.baseUrl}/$modelPath") {
@@ -80,14 +82,16 @@ class GeminiClient internal constructor(
         } catch (e: ClientRequestException) {
             throw e.toAiException(provider.name)
         } catch (e: ServerResponseException) {
-            throw AiException.ProviderException(e.message ?: "Server error", provider.name, e.response.status.value)
+            throw AiException.ProviderException(
+                e.message ?: "Server error", provider.name, e.response.status.value,
+            )
         } catch (e: Exception) {
             throw AiException.NetworkException(e.message ?: "Network error", e)
         }
     }
 
     override fun chatStream(request: ChatRequest): Flow<StreamChunk> = flow {
-        val dto = request.toGeminiRequest()
+        val dto       = request.toGeminiRequest()
         val modelPath = "models/${request.model}:streamGenerateContent"
         try {
             httpClient.preparePost("${provider.baseUrl}/$modelPath") {
@@ -95,24 +99,24 @@ class GeminiClient internal constructor(
                 parameter("alt", "sse")
                 setBody(dto)
             }.execute { response ->
-                val channel = response.bodyAsChannel()
-                var chunkId = 0
+                val channel  = response.bodyAsChannel()
+                var chunkId  = 0
                 while (!channel.isClosedForRead) {
                     val line = channel.readUTF8Line() ?: break
                     if (line.startsWith("data: ")) {
                         val data = line.removePrefix("data: ").trim()
                         if (data.isNotEmpty() && data != "[DONE]") {
                             try {
-                                val chunk = sharedJson.decodeFromString<GeminiGenerateResponse>(data)
-                                val text = chunk.candidates?.firstOrNull()
-                                    ?.content?.parts?.firstOrNull()?.text ?: continue
-                                val finishReason = chunk.candidates.firstOrNull()?.finishReason
+                                val chunk       = sharedJson.decodeFromString<GeminiGenerateResponse>(data)
+                                val candidate   = chunk.candidates?.firstOrNull() ?: continue
+                                val text        = candidate.content?.parts?.firstOrNull()?.text ?: continue
+                                val finishReason = candidate.finishReason
                                 emit(StreamChunk(
-                                    id = "gemini-stream-${chunkId++}",
-                                    delta = MessageDelta(content = text),
+                                    id           = "gemini-stream-${chunkId++}",
+                                    delta        = MessageDelta(content = text),
                                     finishReason = finishReason?.toFinishReason(),
                                 ))
-                            } catch (_: Exception) { /* skip */ }
+                            } catch (_: Exception) { /* skip malformed chunks */ }
                         }
                     }
                 }
@@ -128,20 +132,21 @@ class GeminiClient internal constructor(
         val batchRequest = GeminiBatchEmbedRequest(
             requests = request.input.map { text ->
                 GeminiEmbedRequest(
-                    model = "models/${request.model}",
+                    model   = "models/${request.model}",
                     content = GeminiContent(parts = listOf(GeminiPart(text = text))),
                 )
             }
         )
         return try {
-            val response = httpClient.post("${provider.baseUrl}/models/${request.model}:batchEmbedContents") {
-                parameter("key", config.apiKey)
-                setBody(batchRequest)
-            }.body<GeminiBatchEmbedResponse>()
+            val response = httpClient
+                .post("${provider.baseUrl}/models/${request.model}:batchEmbedContents") {
+                    parameter("key", config.apiKey)
+                    setBody(batchRequest)
+                }.body<GeminiBatchEmbedResponse>()
             EmbeddingResponse(
-                model = request.model,
+                model      = request.model,
                 embeddings = response.embeddings.map { it.values },
-                usage = Usage(0, 0, 0),
+                usage      = Usage(0, 0, 0),
             )
         } catch (e: Exception) {
             throw AiException.NetworkException(e.message ?: "Embedding error", e)
@@ -161,12 +166,12 @@ class GeminiClient internal constructor(
     override fun close() = httpClient.close()
 
     private fun ChatRequest.toGeminiRequest(): GeminiGenerateRequest {
-        val systemMsg = messages.firstOrNull { it.role == Role.system }
+        val systemMsg    = messages.firstOrNull { it.role == Role.system }
         val conversation = messages.filter { it.role != Role.system }
         return GeminiGenerateRequest(
             contents = conversation.map { msg ->
                 GeminiContent(
-                    role = if (msg.role == Role.assistant) "model" else "user",
+                    role  = if (msg.role == Role.assistant) "model" else "user",
                     parts = listOf(GeminiPart(text = msg.content.asText() ?: "")),
                 )
             },
@@ -174,18 +179,18 @@ class GeminiClient internal constructor(
                 GeminiContent(parts = listOf(GeminiPart(text = sm.content.asText() ?: "")))
             },
             generationConfig = GeminiGenerationConfig(
-                temperature = temperature,
+                temperature     = temperature,
                 maxOutputTokens = maxTokens,
-                topP = topP,
-                stopSequences = stop,
+                topP            = topP,
+                stopSequences   = stop,
             ),
             tools = tools?.let { toolList ->
                 listOf(GeminiTool(
                     functionDeclarations = toolList.map { t ->
                         GeminiFunctionDeclaration(
-                            name = t.function.name,
+                            name        = t.function.name,
                             description = t.function.description,
-                            parameters = t.function.parameters,
+                            parameters  = t.function.parameters,
                         )
                     }
                 ))
@@ -196,15 +201,15 @@ class GeminiClient internal constructor(
 
 private fun GeminiGenerateResponse.toCoreResponse(provider: AiProvider, model: String): ChatResponse {
     val candidate = candidates?.firstOrNull()
-    val text = candidate?.content?.parts?.firstOrNull()?.text ?: ""
+    val text      = candidate?.content?.parts?.firstOrNull()?.text ?: ""
     return ChatResponse(
-        id = "gemini-${System.currentTimeMillis()}",
-        model = model,
+        id       = "gemini-response",   // Gemini API doesn't return a request ID
+        model    = model,
         provider = provider,
-        choices = listOf(
+        choices  = listOf(
             Choice(
-                index = 0,
-                message = Message(Role.assistant, MessageContent.Text(text)),
+                index        = 0,
+                message      = Message(Role.assistant, MessageContent.Text(text)),
                 finishReason = candidate?.finishReason?.toFinishReason(),
             )
         ),
@@ -215,43 +220,43 @@ private fun GeminiGenerateResponse.toCoreResponse(provider: AiProvider, model: S
 }
 
 private fun String.toFinishReason(): FinishReason = when (this) {
-    "STOP" -> FinishReason.stop
+    "STOP"       -> FinishReason.stop
     "MAX_TOKENS" -> FinishReason.length
-    "SAFETY" -> FinishReason.content_filter
-    else -> FinishReason.stop
+    "SAFETY"     -> FinishReason.content_filter
+    else         -> FinishReason.stop
 }
 
 private suspend fun ClientRequestException.toAiException(providerName: String): AiException =
     when (response.status) {
-        HttpStatusCode.Unauthorized -> AiException.AuthenticationException(message ?: "Unauthorized", providerName)
+        HttpStatusCode.Unauthorized    -> AiException.AuthenticationException(message ?: "Unauthorized", providerName)
         HttpStatusCode.TooManyRequests -> AiException.RateLimitException(message ?: "Rate limited", providerName)
         else -> AiException.InvalidRequestException(message ?: "Request error", providerName, response.status.value)
     }
 
 private fun GeminiModelData.toAiModel(provider: AiProvider): AiModel = AiModel(
-    id = name.removePrefix("models/"),
-    provider = provider,
-    contextWindow = inputTokenLimit,
-    maxOutputTokens = outputTokenLimit,
-    supportsStreaming = "generateContent" in supportedGenerationMethods,
-    supportsTools = true,
-    supportsVision = true,
+    id                 = name.removePrefix("models/"),
+    provider           = provider,
+    contextWindow      = inputTokenLimit,
+    maxOutputTokens    = outputTokenLimit,
+    supportsStreaming   = "generateContent" in supportedGenerationMethods,
+    supportsTools      = true,
+    supportsVision     = true,
     supportsEmbeddings = "embedContent" in supportedGenerationMethods,
 )
 
 /** DSL config builder for Gemini. */
 class GeminiClientConfigBuilder {
-    var apiKey: String = ""
-    var baseUrl: String? = null
-    var timeoutMs: Long = 30_000L
-    var maxRetries: Int = 3
-    var httpLoggingEnabled: Boolean = false
+    var apiKey             : String  = ""
+    var baseUrl            : String? = null
+    var timeoutMs          : Long    = 30_000L
+    var maxRetries         : Int     = 3
+    var httpLoggingEnabled : Boolean = false
 
     fun build() = AiClientConfig(
-        apiKey = apiKey,
-        baseUrl = baseUrl,
-        timeoutMs = timeoutMs,
-        maxRetries = maxRetries,
+        apiKey             = apiKey,
+        baseUrl            = baseUrl,
+        timeoutMs          = timeoutMs,
+        maxRetries         = maxRetries,
         httpLoggingEnabled = httpLoggingEnabled,
     )
 }
